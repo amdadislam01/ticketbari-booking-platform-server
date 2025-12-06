@@ -25,7 +25,18 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     await client.connect();
+    const db = client.db("ticketBari");
+    const usersCollection = db.collection("users");
 
+    // Users Related API
+    app.post("/users", async (req, res) => {
+      const user = req.body;
+    //   user.role = "user";
+      user.createAt = new Date();
+
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
     
     await client.db("admin").command({ ping: 1 });
     console.log(
