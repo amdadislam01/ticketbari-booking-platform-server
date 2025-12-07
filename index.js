@@ -87,6 +87,27 @@ async function run() {
       const result = await ticketCollection.deleteOne(query);
       res.send(result);
     });
+    // Ticket Update Api
+    app.patch("/added-ticket/:id", async (req, res) => {
+      const id = req.params.id;
+      const updates = req.body;
+      if (updates.date) updates.date = new Date(updates.date);
+
+      try {
+        const filter = { _id: new ObjectId(id) };
+        const updateDoc = { $set: updates };
+
+        const result = await ticketCollection.updateOne(filter, updateDoc);
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "Ticket not found" });
+        }
+
+        res.send({ message: "Ticket updated successfully", result });
+      } catch (error) {
+        res.status(500).send({ message: "Error updating ticket", error });
+      }
+    });
 
     await client.db("admin").command({ ping: 1 });
     console.log(
