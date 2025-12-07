@@ -5,14 +5,11 @@ const { MongoClient, ServerApiVersion } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 
-
 // Middleware
 app.use(express.json());
 app.use(cors());
 
-
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.cewig2g.mongodb.net/?appName=Cluster0`;
-
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -27,17 +24,64 @@ async function run() {
     await client.connect();
     const db = client.db("ticketBari");
     const usersCollection = db.collection("users");
+    const ticketCollection = db.collection("added-ticket");
 
     // Users Related API
     app.post("/users", async (req, res) => {
       const user = req.body;
-    //   user.role = "user";
+      user.role = "user";
       user.createAt = new Date();
 
       const result = await usersCollection.insertOne(user);
       res.send(result);
     });
+
+    // Users get
+    // app.get("/users", async (req, res) => {
+    //   const result = await usersCollection.findOne();
+    //   res.send(result);
+    // });
+
+    // Users Role
+    app.get("/users/:email/role", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      res.send({ role: user?.role || "user" });
+    });
+
+    app.get("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+      res.send(user);
+    });
+
+    // Ticket Create API
+    app.post("/added-ticket", async (req, res) => {
+      const ticket = req.body;
+      const price = ticket.price;
+      const quantity = ticket.quantity;
+      // ticket Create Time
+      ticket.createAt = new Date();
+      ticket.date = new Date(ticket.date);
+      ticket.status = "pending";
+      ticket.price = Number(price);
+      ticket.quantity = Number(quantity);
+      const result = await ticketCollection.insertOne(ticket);
+      res.send(result);
+    });
+
+    // Get Tickets by Vendor
+    app.get("/added-ticket", async (req, res) => {
+      const email = req.query.email;
+      const result = await ticketCollection
+        .find({ vendorEmail: email })
+        .toArray();
+      res.send(result);
+    });
     
+
     await client.db("admin").command({ ping: 1 });
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
