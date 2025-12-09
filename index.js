@@ -172,7 +172,8 @@ async function run() {
 
     // Booking Ticket
     app.post("/booking", async (req, res) => {
-      const { ticketId, quantity, ...rest } = req.body;
+      const { ticketId, ticketDate, quantity, ...rest } = req.body;
+      const date = new Date(ticketDate);
 
       const ticket = await ticketCollection.findOne({
         _id: new ObjectId(ticketId),
@@ -207,12 +208,27 @@ async function run() {
       } else {
         result = await bookTicketCollection.insertOne({
           ticketId,
+          ticketDate: date,
           quantity,
           ...rest,
         });
       }
 
       res.send({ success: true, result });
+    });
+    // Booking Ticket get API
+    app.get("/booking", async (req, res) => {
+      const userEmail = req.query.email; 
+
+      if (!userEmail) {
+        return res.status(400).send({
+          success: false,
+          message: "Email is required",
+        });
+      }
+
+      const result = await bookTicketCollection.find({ userEmail }).toArray();
+      res.send(result);
     });
 
     console.log("Connected to MongoDB");
