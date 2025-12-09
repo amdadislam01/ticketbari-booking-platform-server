@@ -30,8 +30,13 @@ async function run() {
     // Create User
     app.post("/users", async (req, res) => {
       const user = req.body;
+      const existingUser = await usersCollection.findOne({ email: user.email });
+      if (existingUser) {
+        return res.status(400).send({ message: "User already exists" });
+      }
       user.role = "user";
-      user.createAt = new Date();
+      user.createdAt = new Date();
+
       const result = await usersCollection.insertOne(user);
       res.send(result);
     });
@@ -175,6 +180,7 @@ async function run() {
       const { ticketId, ticketDate, quantity, ...rest } = req.body;
       const date = new Date(ticketDate);
 
+      // Check ticket
       const ticket = await ticketCollection.findOne({
         _id: new ObjectId(ticketId),
       });
@@ -185,9 +191,10 @@ async function run() {
       }
 
       if (ticket.quantity < quantity) {
-        return res
-          .status(400)
-          .send({ success: false, message: "Not enough tickets available" });
+        return res.status(400).send({
+          success: false,
+          message: "Not enough tickets available",
+        });
       }
 
       //  ticket quantity
@@ -195,14 +202,17 @@ async function run() {
         { _id: new ObjectId(ticketId) },
         { $inc: { quantity: -quantity } }
       );
-      let result;
+
+      //  user-specific ticket booking
       const existBookingTicket = await bookTicketCollection.findOne({
         ticketId,
+        userEmail: rest.userEmail,
       });
 
+      let result;
       if (existBookingTicket) {
         result = await bookTicketCollection.updateOne(
-          { _id: existBookingTicket._id },
+          { ticketId, userEmail: rest.userEmail },
           { $inc: { quantity: quantity } }
         );
       } else {
@@ -216,9 +226,10 @@ async function run() {
 
       res.send({ success: true, result });
     });
+
     // Booking Ticket get API
     app.get("/booking", async (req, res) => {
-      const userEmail = req.query.email; 
+      const userEmail = req.query.email;
 
       if (!userEmail) {
         return res.status(400).send({
@@ -228,6 +239,47 @@ async function run() {
       }
 
       const result = await bookTicketCollection.find({ userEmail }).toArray();
+      res.send(result);
+    });
+
+    app.get("/booking/all", async (req, res) => {
+      const result = await bookTicketCollection.find().toArray();
+      res.send(result);
+    });
+
+    // Get Pending Booking Tickets
+    app.get("/booking/pending", async (req, res) => {
+      const result = await bookTicketCollection
+        .find()
+        .sort({ createAt: -1 })
+        .toArray();
+      res.send(result);
+    });
+    // Update booking Ticket Status
+    app.patch("/booking/status/:id", async (req, res) => {
+      const id = req.params.id;
+      const { status } = req.body;
+
+      const result = await bookTicketCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } }
+      );
+
+      res.send(result);
+    });
+
+    // Update Booking Ticket
+    app.patch("/booking/update/:id", async (req, res) => {
+      const id = req.params.id;
+      const updates = req.body;
+
+      if (updates.date) updates.date = new Date(updates.date);
+
+      const result = await bookTicketCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updates }
+      );
+
       res.send(result);
     });
 
