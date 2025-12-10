@@ -1,6 +1,7 @@
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
+const stripe = require("stripe")(process.env.PAYMENT_GET);
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
@@ -26,6 +27,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const ticketCollection = db.collection("added-ticket");
     const bookTicketCollection = db.collection("booking");
+    const paymentCollection = db.collection("payment");
 
     // Create User
     app.post("/users", async (req, res) => {
@@ -82,9 +84,7 @@ async function run() {
     app.patch("/users/:email", async (req, res) => {
       const email = req.params.email;
       const { displayName, photoURL } = req.body;
-
       const filter = { email };
-
       const updateDoc = {
         $set: {
           displayName,
@@ -111,7 +111,7 @@ async function run() {
       }
     });
 
-    /// Create Ticket
+    // Create Ticket
     app.post("/added-ticket", async (req, res) => {
       const ticket = req.body;
       const user = await usersCollection.findOne({ email: ticket.vendorEmail });
@@ -156,6 +156,7 @@ async function run() {
         .toArray();
       res.send(result);
     });
+
     // Get Approved Tickets
     app.get("/added-ticket/approved", async (req, res) => {
       const result = await ticketCollection
@@ -164,6 +165,7 @@ async function run() {
         .toArray();
       res.send(result);
     });
+
     // Details Get API
     app.get("/added-ticket/approved/:id", async (req, res) => {
       const id = req.params.id;
@@ -171,6 +173,7 @@ async function run() {
       const result = await ticketCollection.findOne(query);
       res.send(result);
     });
+
     // Update Ticket Status
     app.patch("/added-ticket/status/:id", async (req, res) => {
       const id = req.params.id;
@@ -275,6 +278,7 @@ async function run() {
       res.send(result);
     });
 
+    // All ticket
     app.get("/booking/all", async (req, res) => {
       const result = await bookTicketCollection.find().toArray();
       res.send(result);
@@ -288,6 +292,15 @@ async function run() {
         .toArray();
       res.send(result);
     });
+
+    // Booking ticket Id Find
+    app.get("/booking/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await bookTicketCollection.findOne(query);
+      res.send(result);
+    });
+
     // Update booking Ticket Status
     app.patch("/booking/status/:id", async (req, res) => {
       const id = req.params.id;
@@ -313,6 +326,115 @@ async function run() {
         { $set: updates }
       );
 
+      res.send(result);
+    });
+
+    // Payment Related API
+    app.post("/checkout-payment", async (req, res) => {
+      try {
+        const paymentInfo = req.body;
+        const amount = parseInt(paymentInfo.totalPrice) * 100;
+
+        const session = await stripe.checkout.sessions.create({
+          line_items: [
+            {
+              price_data: {
+                currency: "USD",
+                unit_amount: amount,
+                product_data: {
+                  name: `Please pay for: ${paymentInfo.title}`,
+                },
+              },
+              quantity: 1,
+            },
+          ],
+          customer_email: paymentInfo.senderEmail,
+          mode: "payment",
+          metadata: {
+            ticketId: paymentInfo.ticketId,
+            ticketName: paymentInfo.title,
+          },
+          success_url: `${process.env.SITE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.SITE_DOMAIN}/payment-cancelled`,
+        });
+
+        console.log(session);
+        res.send({ url: session.url });
+      } catch (error) {
+        console.error("PAYMENT ERROR:", error);
+        res.status(500).send({ message: error.message });
+      }
+    });
+    // Payment success Api
+    app.patch("/payment-success", async (req, res) => {
+      try {
+        const sessionId = req.query.session_id;
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+        const transactionId = session.payment_intent;
+        
+        const query = { transactionId: transactionId };
+
+        const existing = await paymentCollection.findOne(query);
+        
+        if (existing) {
+          return res.send({
+            message: "Payment already saved",
+            transactionId,
+          });
+        }
+        if (session.payment_status !== "paid") {
+          return res.send({ success: false, message: "Payment not completed" });
+        }
+        await bookTicketCollection.updateOne(
+          { _id: new ObjectId(session.metadata.ticketId) },
+          { $set: { status: "paid" } }
+        );
+
+        const payment = {
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          customerEmail: session.customer_email,
+          ticketId: session.metadata.ticketId,
+          ticketName: session.metadata.ticketName,
+          transactionId,
+          paymentStatus: session.payment_status,
+          paidAt: new Date(),
+        };
+        let savedPayment;
+
+        try {
+          savedPayment = await paymentCollection.insertOne(payment);
+        } catch (err) {
+          if (err.code === 11000) {
+            return res.send({
+              success: true,
+              message: "Payment already saved",
+              transactionId,
+            });
+          }
+          throw err;
+        }
+
+        return res.send({
+          success: true,
+          message: "Payment processed successfully",
+          transactionId,
+          paymentInfo: savedPayment,
+        });
+      } catch (error) {
+        console.error("Payment Success Error:", error);
+      }
+      return res.send({ success: false });
+    });
+    // Payment get api
+    app.get("/payment", async (req, res) => {
+      const email = req.query.email;
+      const query = {};
+      if (email) {
+        query.customerEmail = email;
+      }
+      const cursor = paymentCollection.find(query).sort({ paidAt: -1 });
+      const result = await cursor.toArray();
       res.send(result);
     });
 
