@@ -60,7 +60,7 @@ async function run() {
       const result = await cursor.toArray();
       res.send(result);
     });
-    // Users Update API
+    // Users Update Role API
     app.patch("/users/:id/role", async (req, res) => {
       const id = req.params.id;
       const { role } = req.body;
@@ -76,6 +76,39 @@ async function run() {
       }
 
       res.send({ message: "Role updated & fraud process completed!" });
+    });
+
+    // Update Users
+    app.patch("/users/:email", async (req, res) => {
+      const email = req.params.email;
+      const { displayName, photoURL } = req.body;
+
+      const filter = { email };
+
+      const updateDoc = {
+        $set: {
+          displayName,
+          photoURL,
+          updatedAt: new Date(),
+        },
+      };
+
+      try {
+        const result = await usersCollection.updateOne(filter, updateDoc);
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        res.send({
+          success: true,
+          message: "Profile updated successfully in database",
+          modifiedCount: result.modifiedCount,
+        });
+      } catch (error) {
+        console.error("DB Update Error:", error);
+        res.status(500).send({ message: "Server error" });
+      }
     });
 
     /// Create Ticket
