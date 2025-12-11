@@ -130,7 +130,47 @@ async function run() {
       ticket.price = Number(ticket.price);
       ticket.quantity = Number(ticket.quantity);
 
+      ticket.advertise = false;
+
       const result = await ticketCollection.insertOne(ticket);
+      res.send(result);
+    });
+
+    // Toggle Advertise Status
+    app.patch("/added-ticket/advertise/:id", async (req, res) => {
+      const id = req.params.id;
+      const { advertise } = req.body;
+
+      // Count how many tickets already advertised
+      const count = await ticketCollection.countDocuments({ advertise: true });
+
+      if (advertise === true && count >= 6) {
+        return res.status(400).send({
+          success: false,
+          message: "Cannot advertise more than 6 tickets at a time.",
+        });
+      }
+
+      const result = await ticketCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { advertise } }
+      );
+
+      res.send({
+        success: true,
+        message: `Ticket is now ${advertise ? "Advertised" : "Unadvertised"}`,
+        result,
+      });
+    });
+
+    // Get Advertised Tickets 
+    app.get("/added-ticket/advertised", async (req, res) => {
+      const result = await ticketCollection
+        .find({ advertise: true, status: "approved" })
+        .sort({ createAt: -1 })
+        .limit(6)
+        .toArray();
+
       res.send(result);
     });
 
@@ -254,8 +294,7 @@ async function run() {
             quantity,
             ...rest,
           });
-        }
-        else if (existBooking.status === "pending") {
+        } else if (existBooking.status === "pending") {
           result = await bookTicketCollection.updateOne(
             { ticketId, userEmail: rest.userEmail },
             { $inc: { quantity: quantity } }
