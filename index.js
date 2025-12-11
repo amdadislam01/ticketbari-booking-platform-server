@@ -210,20 +210,21 @@ async function run() {
       });
       res.send(result);
     });
-
-    // Booking Ticket
+    // booking Ticket API
     app.post("/booking", async (req, res) => {
       const { ticketId, ticketDate, quantity, ...rest } = req.body;
       const date = new Date(ticketDate);
 
-      // Check ticket
+      //  ticket exists
       const ticket = await ticketCollection.findOne({
         _id: new ObjectId(ticketId),
       });
+
       if (!ticket) {
-        return res
-          .status(404)
-          .send({ success: false, message: "Ticket not found" });
+        return res.status(404).send({
+          success: false,
+          message: "Ticket not found",
+        });
       }
 
       if (ticket.quantity < quantity) {
@@ -233,24 +234,33 @@ async function run() {
         });
       }
 
-      //  ticket quantity
       await ticketCollection.updateOne(
         { _id: new ObjectId(ticketId) },
         { $inc: { quantity: -quantity } }
       );
 
-      //  user-specific ticket booking
-      const existBookingTicket = await bookTicketCollection.findOne({
+      const existBooking = await bookTicketCollection.findOne({
         ticketId,
         userEmail: rest.userEmail,
       });
 
       let result;
-      if (existBookingTicket) {
-        result = await bookTicketCollection.updateOne(
-          { ticketId, userEmail: rest.userEmail },
-          { $inc: { quantity: quantity } }
-        );
+
+      if (existBooking) {
+        if (existBooking.status === "paid") {
+          result = await bookTicketCollection.insertOne({
+            ticketId,
+            ticketDate: date,
+            quantity,
+            ...rest,
+          });
+        }
+        else if (existBooking.status === "pending") {
+          result = await bookTicketCollection.updateOne(
+            { ticketId, userEmail: rest.userEmail },
+            { $inc: { quantity: quantity } }
+          );
+        }
       } else {
         result = await bookTicketCollection.insertOne({
           ticketId,
@@ -371,11 +381,11 @@ async function run() {
         const sessionId = req.query.session_id;
         const session = await stripe.checkout.sessions.retrieve(sessionId);
         const transactionId = session.payment_intent;
-        
+
         const query = { transactionId: transactionId };
 
         const existing = await paymentCollection.findOne(query);
-        
+
         if (existing) {
           return res.send({
             message: "Payment already saved",
