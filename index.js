@@ -206,6 +206,16 @@ async function run() {
       res.send(result);
     });
 
+    // Get Approved Tickets
+    app.get("/latest-ticket", async (req, res) => {
+      const result = await ticketCollection
+        .find({ status: "approved" })
+        .sort({ createAt: -1 })
+        .limit(8)
+        .toArray();
+      res.send(result);
+    });
+
     // Details Get API
     app.get("/added-ticket/approved/:id", async (req, res) => {
       const id = req.params.id;
