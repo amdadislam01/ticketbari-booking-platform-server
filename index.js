@@ -6,9 +6,36 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 const port = process.env.PORT || 3000;
 
+const admin = require("firebase-admin");
+
+const serviceAccount = require("./ticketbari-firebase.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 // Middleware
 app.use(express.json());
 app.use(cors());
+
+const verifyFBToken = async (req, res, next) => {
+  console.log("headers", req.headers?.authorization);
+  const token = req.headers.authorization;
+
+  if (!token) {
+    return res.status(401).send({ message: "unauthorized access" });
+  }
+
+  try {
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    console.log(decoded);
+    req.decoded_email = decoded.email;
+    next();
+  } catch (error) {
+    return res.status(401).send({ message: "unauthorized access" });
+  }
+};
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.cewig2g.mongodb.net/?appName=Cluster0`;
 
@@ -28,6 +55,19 @@ async function run() {
     const ticketCollection = db.collection("added-ticket");
     const bookTicketCollection = db.collection("booking");
     const paymentCollection = db.collection("payment");
+
+    // Middle admin before using with database access
+    // must be used after verifyFBToken middleware
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const query = { email };
+      const user = await usersCollection.findOne(query);
+
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "forbidden Access" });
+      }
+      next();
+    };
 
     // Create User
     app.post("/users", async (req, res) => {
@@ -56,14 +96,15 @@ async function run() {
       const user = await usersCollection.findOne({ email });
       res.send(user);
     });
+
     // Get All Users
-    app.get("/users", async (req, res) => {
+    app.get("/users", verifyFBToken, async (req, res) => {
       const cursor = usersCollection.find();
       const result = await cursor.toArray();
       res.send(result);
     });
     // Users Update Role API
-    app.patch("/users/:id/role", async (req, res) => {
+    app.patch("/users/:id/role", verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const { role } = req.body;
       const query = { _id: new ObjectId(id) };
@@ -260,6 +301,7 @@ async function run() {
       });
       res.send(result);
     });
+
     // booking Ticket API
     app.post("/booking", async (req, res) => {
       const { ticketId, ticketDate, quantity, ...rest } = req.body;
@@ -424,6 +466,7 @@ async function run() {
         res.status(500).send({ message: error.message });
       }
     });
+
     // Payment success Api
     app.patch("/payment-success", async (req, res) => {
       try {
@@ -485,8 +528,9 @@ async function run() {
       }
       return res.send({ success: false });
     });
+
     // Payment get api
-    app.get("/payment", async (req, res) => {
+    app.get("/payment", verifyFBToken, async (req, res) => {
       const email = req.query.email;
       const query = {};
       if (email) {
