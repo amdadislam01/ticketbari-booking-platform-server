@@ -49,7 +49,8 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
+
     const db = client.db("ticketBari");
     const usersCollection = db.collection("users");
     const ticketCollection = db.collection("added-ticket");
@@ -104,22 +105,27 @@ async function run() {
       res.send(result);
     });
     // Users Update Role API
-    app.patch("/users/:id/role", verifyFBToken, verifyAdmin, async (req, res) => {
-      const id = req.params.id;
-      const { role } = req.body;
-      const query = { _id: new ObjectId(id) };
+    app.patch(
+      "/users/:id/role",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const { role } = req.body;
+        const query = { _id: new ObjectId(id) };
 
-      await usersCollection.updateOne(query, { $set: { role } });
+        await usersCollection.updateOne(query, { $set: { role } });
 
-      if (role === "fraud") {
-        await ticketCollection.updateMany(
-          { vendorId: id },
-          { $set: { status: "hidden" } }
-        );
+        if (role === "fraud") {
+          await ticketCollection.updateMany(
+            { vendorId: id },
+            { $set: { status: "hidden" } }
+          );
+        }
+
+        res.send({ message: "Role updated & fraud process completed!" });
       }
-
-      res.send({ message: "Role updated & fraud process completed!" });
-    });
+    );
 
     // Update Users
     app.patch("/users/:email", async (req, res) => {
@@ -204,7 +210,7 @@ async function run() {
       });
     });
 
-    // Get Advertised Tickets 
+    // Get Advertised Tickets
     app.get("/added-ticket/advertised", async (req, res) => {
       const result = await ticketCollection
         .find({ advertise: true, status: "approved" })

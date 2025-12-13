@@ -1,3 +1,4 @@
 node_modules
 .env
 ticketbari-firebase.json
+.vercel
