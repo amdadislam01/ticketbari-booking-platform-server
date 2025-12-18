@@ -413,12 +413,28 @@ async function run() {
       const id = req.params.id;
       const { status } = req.body;
 
-      const result = await bookTicketCollection.updateOne(
+      const booking = await bookTicketCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+      if (!booking) {
+        return res.status(404).send({ message: "Booking not found" });
+      }
+
+      //  booking status Update
+      await bookTicketCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: { status } }
       );
 
-      res.send(result);
+      if (status === "rejected") {
+        await ticketCollection.updateOne(
+          { _id: new ObjectId(booking.ticketId) },
+          { $inc: { quantity: booking.quantity } }
+        );
+      }
+
+      res.send({ success: true });
     });
 
     // Update Booking Ticket
@@ -434,6 +450,37 @@ async function run() {
       );
 
       res.send(result);
+    });
+
+    // Delete Booking Ticket
+    app.delete("/booking/:id", async (req, res) => {
+      const id = req.params.id;
+      const booking = await bookTicketCollection.findOne({
+        _id: new ObjectId(id),
+      });
+
+      if (!booking) {
+        return res.status(404).send({
+          success: false,
+          message: "Booking not found",
+        });
+      }
+
+      // Restore ticket quantity
+      await ticketCollection.updateOne(
+        { _id: new ObjectId(booking.ticketId) },
+        { $inc: { quantity: booking.quantity } }
+      );
+
+      const result = await bookTicketCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+
+      res.send({
+        success: true,
+        message: "Booking deleted successfully",
+        result,
+      });
     });
 
     // Payment Related API
